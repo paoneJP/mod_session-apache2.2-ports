@@ -1,407 +1,96 @@
-diff -u mod_session-apache2.2-port.orig/mod_session.c mod_session-apache2.2-port/mod_session.c
---- mod_session-apache2.2-port.orig/mod_session.c	2014-11-01 15:28:37.143436639 +0900
-+++ mod_session-apache2.2-port/mod_session.c	2014-11-01 14:20:25.523837973 +0900
-@@ -22,6 +22,201 @@
+diff -ur mod_session-apache2.2-ports.orig/apu/apr_crypto.c mod_session-apache2.2-ports/apu/apr_crypto.c
+--- mod_session-apache2.2-ports.orig/apu/apr_crypto.c	2014-08-22 00:29:54.000000000 +0900
++++ mod_session-apache2.2-ports/apu/apr_crypto.c	2015-04-18 00:00:00.000000000 +0900
+@@ -26,6 +26,11 @@
+ #include "apr_thread_mutex.h"
+ #include "apr_lib.h"
+ 
++
++/* :: include ported headers and routines */
++#include "parts/use_apr_crypto.h"
++
++
+ #if APU_HAVE_CRYPTO
+ 
+ #include "apu_internal.h"
+diff -ur mod_session-apache2.2-ports.orig/apu/apr_crypto_openssl.c mod_session-apache2.2-ports/apu/apr_crypto_openssl.c
+--- mod_session-apache2.2-ports.orig/apu/apr_crypto_openssl.c	2011-12-09 21:05:40.000000000 +0900
++++ mod_session-apache2.2-ports/apu/apr_crypto_openssl.c	2015-04-18 00:00:00.000000000 +0900
+@@ -26,6 +26,11 @@
+ #include "apr_time.h"
+ #include "apr_buckets.h"
+ 
++
++/* :: include ported headers and routines */
++#include "parts/use_apr_crypto.h"
++
++
+ #include "apr_crypto_internal.h"
+ 
+ #if APU_HAVE_CRYPTO
+diff -ur mod_session-apache2.2-ports.orig/mod_session.c mod_session-apache2.2-ports/mod_session.c
+--- mod_session-apache2.2-ports.orig/mod_session.c	2014-01-24 22:25:27.000000000 +0900
++++ mod_session-apache2.2-ports/mod_session.c	2015-04-18 00:00:00.000000000 +0900
+@@ -22,6 +22,13 @@
  #include "http_request.h"
  #include "http_protocol.h"
  
 +
-+/* :: ported from httpd-2.4.10/include/http_log.h */
-+/**
-+ * APLOGNO() should be used at the start of the format string passed
-+ * to ap_log_error() and friends. The argument must be a 5 digit decimal
-+ * number. It creates a tag of the form "AH02182: "
-+ * See docs/log-message-tags/README for details.
-+ */
-+#define APLOGNO(n)              "AH" #n ": "
-+
-+
-+/* :: ported from httpd-2.4.10/include/http_config.h */
-+/**
-+ * AP_DECLARE_MODULE is a convenience macro that combines a call of
-+ * APLOG_USE_MODULE with the definition of the module symbol.
-+ *
-+ * If a module should be backward compatible with versions before 2.3.6,
-+ * APLOG_USE_MODULE should be used explicitly instead of AP_DECLARE_MODULE.
-+ */
-+#define AP_DECLARE_MODULE(foo) \
-+    APLOG_USE_MODULE(foo);                         \
-+    module AP_MODULE_DECLARE_DATA foo##_module
-+
-+
-+/* :: ported from httpd-2.4.10/server/util.c */
-+/* A bunch of functions in util.c scan strings looking for certain characters.
-+ * To make that more efficient we encode a lookup table.  The test_char_table
-+ * is generated automatically by gen_test_char.c.
-+ */
-+#include "test_char.h"
-+
-+/* :: ported from httpd-2.4.10/server/util.c */
-+/* we assume the folks using this ensure 0 <= c < 256... which means
-+ * you need a cast to (unsigned char) first, you can't just plug a
-+ * char in here and get it to work, because if char is signed then it
-+ * will first be sign extended.
-+ */
-+#define TEST_CHAR(c, f)        (test_char_table[(unsigned)(c)] & (f))
-+
-+/* :: ported from httpd-2.4.10/server/util.c */
-+/* c2x takes an unsigned, and expects the caller has guaranteed that
-+ * 0 <= what < 256... which usually means that you have to cast to
-+ * unsigned char first, because (unsigned)(char)(x) first goes through
-+ * signed extension to an int before the unsigned cast.
-+ *
-+ * The reason for this assumption is to assist gcc code generation --
-+ * the unsigned char -> unsigned extension is already done earlier in
-+ * both uses of this code, so there's no need to waste time doing it
-+ * again.
-+ */
-+static const char c2x_table[] = "0123456789abcdef";
-+
-+static APR_INLINE unsigned char *c2x(unsigned what, unsigned char prefix,
-+                                     unsigned char *where)
-+{
-+#if APR_CHARSET_EBCDIC
-+    what = apr_xlate_conv_byte(ap_hdrs_to_ascii, (unsigned char)what);
-+#endif /*APR_CHARSET_EBCDIC*/
-+    *where++ = prefix;
-+    *where++ = c2x_table[what >> 4];
-+    *where++ = c2x_table[what & 0xf];
-+    return where;
-+}
-+
-+/* :: ported from httpd-2.4.10/server/util.c */
-+AP_DECLARE(char *) ap_escape_urlencoded_buffer(char *copy, const char *buffer)
-+{
-+    const unsigned char *s = (const unsigned char *)buffer;
-+    unsigned char *d = (unsigned char *)copy;
-+    unsigned c;
-+
-+    while ((c = *s)) {
-+        if (TEST_CHAR(c, T_ESCAPE_URLENCODED)) {
-+            d = c2x(c, '%', d);
-+        }
-+        else if (c == ' ') {
-+            *d++ = '+';
-+        }
-+        else {
-+            *d++ = c;
-+        }
-+        ++s;
-+    }
-+    *d = '\0';
-+    return copy;
-+}
-+
-+/* :: ported from httpd-2.4.10/server/util.c */
-+static char x2c(const char *what)
-+{
-+    register char digit;
-+
-+#if !APR_CHARSET_EBCDIC
-+    digit = ((what[0] >= 'A') ? ((what[0] & 0xdf) - 'A') + 10
-+             : (what[0] - '0'));
-+    digit *= 16;
-+    digit += (what[1] >= 'A' ? ((what[1] & 0xdf) - 'A') + 10
-+              : (what[1] - '0'));
-+#else /*APR_CHARSET_EBCDIC*/
-+    char xstr[5];
-+    xstr[0]='0';
-+    xstr[1]='x';
-+    xstr[2]=what[0];
-+    xstr[3]=what[1];
-+    xstr[4]='\0';
-+    digit = apr_xlate_conv_byte(ap_hdrs_from_ascii,
-+                                0xFF & strtol(xstr, NULL, 16));
-+#endif /*APR_CHARSET_EBCDIC*/
-+    return (digit);
-+}
-+
-+/* :: ported from httpd-2.4.10/server/util.c */
-+/*
-+ * Unescapes a URL, leaving reserved characters intact.
-+ * Returns 0 on success, non-zero on error
-+ * Failure is due to
-+ *   bad % escape       returns HTTP_BAD_REQUEST
-+ *
-+ *   decoding %00 or a forbidden character returns HTTP_NOT_FOUND
-+ */
-+
-+static int unescape_url(char *url, const char *forbid, const char *reserved)
-+{
-+    register int badesc, badpath;
-+    char *x, *y;
-+
-+    badesc = 0;
-+    badpath = 0;
-+    /* Initial scan for first '%'. Don't bother writing values before
-+     * seeing a '%' */
-+    y = strchr(url, '%');
-+    if (y == NULL) {
-+        return OK;
-+    }
-+    for (x = y; *y; ++x, ++y) {
-+        if (*y != '%') {
-+            *x = *y;
-+        }
-+        else {
-+            if (!apr_isxdigit(*(y + 1)) || !apr_isxdigit(*(y + 2))) {
-+                badesc = 1;
-+                *x = '%';
-+            }
-+            else {
-+                char decoded;
-+                decoded = x2c(y + 1);
-+                if ((decoded == '\0')
-+                    || (forbid && ap_strchr_c(forbid, decoded))) {
-+                    badpath = 1;
-+                    *x = decoded;
-+                    y += 2;
-+                }
-+                else if (reserved && ap_strchr_c(reserved, decoded)) {
-+                    *x++ = *y++;
-+                    *x++ = *y++;
-+                    *x = *y;
-+                }
-+                else {
-+                    *x = decoded;
-+                    y += 2;
-+                }
-+            }
-+        }
-+    }
-+    *x = '\0';
-+    if (badesc) {
-+        return HTTP_BAD_REQUEST;
-+    }
-+    else if (badpath) {
-+        return HTTP_NOT_FOUND;
-+    }
-+    else {
-+        return OK;
-+    }
-+}
-+
-+/* :: ported from httpd-2.4.10/server/util.c */
-+AP_DECLARE(int) ap_unescape_urlencoded(char *query)
-+{
-+    char *slider;
-+
-+    /* replace plus with a space */
-+    if (query) {
-+        for (slider = query; *slider; slider++) {
-+            if (*slider == '+') {
-+                *slider = ' ';
-+            }
-+        }
-+    }
-+
-+    /* unescape everything else */
-+    return unescape_url(query, NULL, NULL);
-+}
++/* :: include ported headers and routines */
++#include "parts/from_httpd.h"
++#include "parts/from_http_log.h"
++#include "parts/from_http_config.h"
 +
 +
  #define SESSION_EXPIRY "expiry"
  #define HTTP_SESSION "HTTP_SESSION"
  
-diff -u mod_session-apache2.2-port.orig/mod_session_cookie.c mod_session-apache2.2-port/mod_session_cookie.c
---- mod_session-apache2.2-port.orig/mod_session_cookie.c	2014-11-01 15:28:45.811430251 +0900
-+++ mod_session-apache2.2-port/mod_session_cookie.c	2014-11-01 14:37:19.127508771 +0900
-@@ -20,6 +20,34 @@
+diff -ur mod_session-apache2.2-ports.orig/mod_session_cookie.c mod_session-apache2.2-ports/mod_session_cookie.c
+--- mod_session-apache2.2-ports.orig/mod_session_cookie.c	2013-07-07 22:50:54.000000000 +0900
++++ mod_session-apache2.2-ports/mod_session_cookie.c	2015-04-18 00:00:00.000000000 +0900
+@@ -20,6 +20,13 @@
  #include "http_log.h"
  #include "util_cookies.h"
  
 +
-+/* :: ported from httpd-2.4.10/include/http_log.h */
-+/**
-+ * APLOGNO() should be used at the start of the format string passed
-+ * to ap_log_error() and friends. The argument must be a 5 digit decimal
-+ * number. It creates a tag of the form "AH02182: "
-+ * See docs/log-message-tags/README for details.
-+ */
-+#define APLOGNO(n)              "AH" #n ": "
-+
-+
-+/* :: ported from httpd-2.4.10/include/http_config.h */
-+/**
-+ * AP_DECLARE_MODULE is a convenience macro that combines a call of
-+ * APLOG_USE_MODULE with the definition of the module symbol.
-+ *
-+ * If a module should be backward compatible with versions before 2.3.6,
-+ * APLOG_USE_MODULE should be used explicitly instead of AP_DECLARE_MODULE.
-+ */
-+#define AP_DECLARE_MODULE(foo) \
-+    APLOG_USE_MODULE(foo);                         \
-+    module AP_MODULE_DECLARE_DATA foo##_module
-+
-+
-+/* :: mod_session_cookie requires functions in util_cookies */
++/* :: include ported headers and routines */
++#include "parts/from_http_log.h"
++#include "parts/from_http_config.h"
 +#include "util_cookies.c"
 +
 +
  #define MOD_SESSION_COOKIE "mod_session_cookie"
  
  module AP_MODULE_DECLARE_DATA session_cookie_module;
-diff -u mod_session-apache2.2-port.orig/mod_session_crypto.c mod_session-apache2.2-port/mod_session_crypto.c
---- mod_session-apache2.2-port.orig/mod_session_crypto.c	2014-11-01 15:28:50.715430432 +0900
-+++ mod_session-apache2.2-port/mod_session_crypto.c	2014-11-01 15:19:25.443441920 +0900
-@@ -22,6 +22,139 @@
+diff -ur mod_session-apache2.2-ports.orig/mod_session_crypto.c mod_session-apache2.2-ports/mod_session_crypto.c
+--- mod_session-apache2.2-ports.orig/mod_session_crypto.c	2013-12-27 03:08:28.000000000 +0900
++++ mod_session-apache2.2-ports/mod_session_crypto.c	2015-04-18 00:00:00.000000000 +0900
+@@ -22,6 +22,15 @@
  #include "http_log.h"
  #include "http_core.h"
  
 +
-+/* :: ported from httpd-2.4.10/include/http_log.h */
-+/**
-+ * APLOGNO() should be used at the start of the format string passed
-+ * to ap_log_error() and friends. The argument must be a 5 digit decimal
-+ * number. It creates a tag of the form "AH02182: "
-+ * See docs/log-message-tags/README for details.
-+ */
-+#define APLOGNO(n)              "AH" #n ": "
-+
-+
-+/* :: ported from httpd-2.4.10/include/http_config.h */
-+/**
-+ * AP_DECLARE_MODULE is a convenience macro that combines a call of
-+ * APLOG_USE_MODULE with the definition of the module symbol.
-+ *
-+ * If a module should be backward compatible with versions before 2.3.6,
-+ * APLOG_USE_MODULE should be used explicitly instead of AP_DECLARE_MODULE.
-+ */
-+#define AP_DECLARE_MODULE(foo) \
-+    APLOG_USE_MODULE(foo);                         \
-+    module AP_MODULE_DECLARE_DATA foo##_module
-+
-+
-+/* :: ported from httpd-2.4.10/include/http_core.h */
-+/*
-+ * possible values for query_code in ap_state_query()
-+ */
-+
-+  /** current status of the server */
-+#define AP_SQ_MAIN_STATE        0
-+  /** are we going to serve requests or are we just testing/dumping config */
-+#define AP_SQ_RUN_MODE          1
-+    /** generation of the top-level apache parent */
-+#define AP_SQ_CONFIG_GEN        2
-+
-+/*
-+ * return values for ap_state_query()
-+ */
-+
-+  /** return value for unknown query_code */
-+#define AP_SQ_NOT_SUPPORTED       -1
-+
-+/* values returned for AP_SQ_MAIN_STATE */
-+  /** before the config preflight */
-+#define AP_SQ_MS_INITIAL_STARTUP   1
-+  /** initial configuration run for setting up log config, etc. */
-+#define AP_SQ_MS_CREATE_PRE_CONFIG 2
-+  /** tearing down configuration */
-+#define AP_SQ_MS_DESTROY_CONFIG    3
-+  /** normal configuration run */
-+#define AP_SQ_MS_CREATE_CONFIG     4
-+  /** running the MPM */
-+#define AP_SQ_MS_RUN_MPM           5
-+  /** cleaning up for exit */
-+#define AP_SQ_MS_EXITING           6
-+
-+/* values returned for AP_SQ_RUN_MODE */
-+  /** command line not yet parsed */
-+#define AP_SQ_RM_UNKNOWN           1
-+  /** normal operation (server requests or signal server) */
-+#define AP_SQ_RM_NORMAL            2
-+  /** config test only */
-+#define AP_SQ_RM_CONFIG_TEST       3
-+  /** only dump some parts of the config */
-+#define AP_SQ_RM_CONFIG_DUMP       4
-+
-+
-+/* :: ported from httpd-2.4.10/server/util.c */
-+AP_DECLARE(char *) ap_get_exec_line(apr_pool_t *p,
-+                                    const char *cmd,
-+                                    const char * const * argv)
-+{
-+    char buf[MAX_STRING_LEN];
-+    apr_procattr_t *procattr;
-+    apr_proc_t *proc;
-+    apr_file_t *fp;
-+    apr_size_t nbytes = 1;
-+    char c;
-+    int k;
-+
-+    if (apr_procattr_create(&procattr, p) != APR_SUCCESS)
-+        return NULL;
-+    if (apr_procattr_io_set(procattr, APR_FULL_BLOCK, APR_FULL_BLOCK,
-+                            APR_FULL_BLOCK) != APR_SUCCESS)
-+        return NULL;
-+    if (apr_procattr_dir_set(procattr,
-+                             ap_make_dirstr_parent(p, cmd)) != APR_SUCCESS)
-+        return NULL;
-+    if (apr_procattr_cmdtype_set(procattr, APR_PROGRAM) != APR_SUCCESS)
-+        return NULL;
-+    proc = apr_pcalloc(p, sizeof(apr_proc_t));
-+    if (apr_proc_create(proc, cmd, argv, NULL, procattr, p) != APR_SUCCESS)
-+        return NULL;
-+    fp = proc->out;
-+
-+    if (fp == NULL)
-+        return NULL;
-+    /* XXX: we are reading 1 byte at a time here */
-+    for (k = 0; apr_file_read(fp, &c, &nbytes) == APR_SUCCESS
-+                && nbytes == 1 && (k < MAX_STRING_LEN-1)     ; ) {
-+        if (c == '\n' || c == '\r')
-+            break;
-+        buf[k++] = c;
-+    }
-+    buf[k] = '\0';
-+    apr_file_close(fp);
-+
-+    return apr_pstrndup(p, buf, k);
-+}
-+
-+
-+/* :: ported from httpd-2.4.10/server/core.c */
-+AP_DECLARE_DATA int ap_main_state = AP_SQ_MS_INITIAL_STARTUP;
-+AP_DECLARE_DATA int ap_run_mode = AP_SQ_RM_UNKNOWN;
-+AP_DECLARE_DATA int ap_config_generation = 0;
-+
-+/* :: ported from httpd-2.4.10/server/core.c */
-+AP_DECLARE(int) ap_state_query(int query)
-+{
-+    switch (query) {
-+    case AP_SQ_MAIN_STATE:
-+        return ap_main_state;
-+    case AP_SQ_RUN_MODE:
-+        return ap_run_mode;
-+    case AP_SQ_CONFIG_GEN:
-+        return ap_config_generation;
-+    default:
-+        return AP_SQ_NOT_SUPPORTED;
-+    }
-+}
++/* :: include ported headers and routines */
++#include "parts/from_httpd.h"
++#include "parts/from_http_log.h"
++#include "parts/from_http_config.h"
++#include "parts/from_http_core.h"
++#include "parts/use_apr_crypto.h"
 +
 +
  #if APU_MAJOR_VERSION == 1 && APU_MINOR_VERSION < 4
  
  #error session_crypto_module requires APU v1.4.0 or later
-Only in mod_session-apache2.2-port: patch
-diff -u mod_session-apache2.2-port.orig/util_cookies.h mod_session-apache2.2-port/util_cookies.h
---- mod_session-apache2.2-port.orig/util_cookies.h	2014-11-01 15:28:20.631435786 +0900
-+++ mod_session-apache2.2-port/util_cookies.h	2014-11-01 14:37:47.275505495 +0900
-@@ -22,6 +22,18 @@
+diff -ur mod_session-apache2.2-ports.orig/util_cookies.h mod_session-apache2.2-ports/util_cookies.h
+--- mod_session-apache2.2-ports.orig/util_cookies.h	2012-01-09 22:18:26.000000000 +0900
++++ mod_session-apache2.2-ports/util_cookies.h	2015-04-18 00:00:00.000000000 +0900
+@@ -22,6 +22,11 @@
  #ifndef UTIL_COOKIES_H
  #define UTIL_COOKIES_H
  
 +
-+/* :: ported from httpd-2.4.10/include/ap_config.h */
-+#ifndef __has_attribute         /* check for supported attributes on clang */
-+#define __has_attribute(x) 0
-+#endif
-+#if (defined(__GNUC__) && __GNUC__ >= 4) || __has_attribute(sentinel)
-+#define AP_FN_ATTR_SENTINEL __attribute__((sentinel))
-+#else
-+#define AP_FN_ATTR_SENTINEL
-+#endif
++/* :: include ported headers and routines */
++#include "parts/from_ap_config.h"
 +
 +
  #ifdef __cplusplus

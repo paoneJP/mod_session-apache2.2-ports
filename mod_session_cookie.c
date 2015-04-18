@@ -21,30 +21,9 @@
 #include "util_cookies.h"
 
 
-/* :: ported from httpd-2.4.10/include/http_log.h */
-/**
- * APLOGNO() should be used at the start of the format string passed
- * to ap_log_error() and friends. The argument must be a 5 digit decimal
- * number. It creates a tag of the form "AH02182: "
- * See docs/log-message-tags/README for details.
- */
-#define APLOGNO(n)              "AH" #n ": "
-
-
-/* :: ported from httpd-2.4.10/include/http_config.h */
-/**
- * AP_DECLARE_MODULE is a convenience macro that combines a call of
- * APLOG_USE_MODULE with the definition of the module symbol.
- *
- * If a module should be backward compatible with versions before 2.3.6,
- * APLOG_USE_MODULE should be used explicitly instead of AP_DECLARE_MODULE.
- */
-#define AP_DECLARE_MODULE(foo) \
-    APLOG_USE_MODULE(foo);                         \
-    module AP_MODULE_DECLARE_DATA foo##_module
-
-
-/* :: mod_session_cookie requires functions in util_cookies */
+/* :: include ported headers and routines */
+#include "parts/from_http_log.h"
+#include "parts/from_http_config.h"
 #include "util_cookies.c"
 
 
